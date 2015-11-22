@@ -1,0 +1,175 @@
+---
+title: "Machine Learning Project"
+author: "N-Dubs"
+output: html_document
+---
+# Executive Summary
+Using a random Forest model, we are able to effectively classify a test set of 20 observations. The random forest provides a great and accurate which is basically cross validates itself. We also compared another decision tree using the J48. Both models were pretty accurate and we can make great classificaiton predictions using these supervised learning algorithms.
+
+# The Project Scope
+Using data from wear-able devices, we want to  use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants and classify their actions. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+We want to to treat this problem as a supervised learning problem, since we have historical data, we want to create a classification model then apply it to classify the 20 test cases, provided by Couresa. 
+We will go over:
+* Prepping the data
+* Building the model,
+* Specificy how we used cross Validation (CV)
+* Discuss the out of sample error rates.
+
+# Pre-Processing and Data Cleaning
+
+## Loading the data
+
+Here is the script to load the data. the Test and training sets have been created for us.
+```{r}
+setwd("C:/Users/nwells/Documents/COURSERA/MachineLearningProject")
+set.seed(50) # keep it reproducible homies.
+train<-read.csv("pml-training.csv",h=T)
+test<-read.csv("pml-testing.csv",h=T)
+```
+Lets see a little bit of the data with str(train) but its a pretty long output.
+The bottom line is that we see missing values and NA values in the data.
+
+```{r, results="hide"}
+str(train)
+```
+
+We can also see the missing values from the following code.
+```{r, results="hide"}
+#see the data and NA's
+for (i in 1:ncol(train))
+{
+print(paste(names(train)[i],sum(is.na(train[,i]))))
+}
+```
+So, now that we kno we have to make some changes - lets do that.
+Comments are in the code.
+```{r}
+##change the blanks to NA
+train[train==""]<-NA
+##only keep data with less than 10% blank/NA
+newtrain<-train[colSums(is.na(train))/dim(train)[1]<.1]
+#remove features with unqiue values
+newtrain2<-newtrain[,-c(1:5)]
+newtrain2$new_window<-as.numeric(newtrain2$new_window)
+datanames<-names(newtrain2[,-55])
+#get the test data to match
+test2<-test[,datanames]
+test2[,1]<-as.numeric((test2[,1]))
+```
+
+# Building the Model
+We're going to use RWeka to build out model.
+why?
+It's faster that caret for some functions and its easy.
+
+We're going to make a decision tree using the J48 algorithm.
+See can get some good summary results as well.
+### J48 Tree
+```{r}
+model1<-J48(factor(newtrain2[,55])~.,data=newtrain2[,-55])
+summary(model1)
+```
+
+hmmm - lets see another model.
+
+### Principle Component Analysis
+```{r}
+# make everthing numeric and drop that yes no categorical variable
+for ( i in 2:(ncol(newtrain2)-1))
+{
+	newtrain2[,i]<-as.numeric(as.character(newtrain2[,i]))
+}
+pca1<-prcomp(newtrain2[,-55])
+
+#Get 95% of the variance with the fist 15 PC's
+newpcadata<-data.frame(pca1$x[,1:15])
+newdata<-cbind(newpcadata,newtrain2[,"classe"])
+newdata<-as.data.frame(newdata)
+
+##PCA j48
+model2<-J48(factor(newdata[,16])~.,data=newdata[,-16],control = Weka_control(R=T))
+
+summary(model2)
+```
+Not Great. Here's another.
+
+### Random Forest
+
+```{r}
+library(randomForest)
+fsmodel<-randomForest(factor(newtrain2[,55])~.,data=newtrain2[,-55],importance=TRUE,ntree=2000)
+varImpPlot(fsmodel,cex = 0.9, pch = 15,color = "brown", lcolor = "blue",bg="black",type=1,main="ALL Features")
+testfs<-importance(fsmodel)
+testfs<-as.data.frame(testfs)
+fsmodel
+testfs<-testfs[with(testfs, order(-MeanDecreaseAccuracy)), ]
+varsal120<-rownames(testfs)[1:20]
+```
+We can even see the most important variable using the Mean Decrease in accuracy.
+
+# The Cross Validiation
+
+We can use CV to get an idea of how the model will perform.
+Here is the CV results from the J48 model. it will average the output.
+```{r}
+model1cv<-evaluate_Weka_classifier(model1,numFolds = 10)
+model1cv
+```
+When using a randomforest we don't really need to CV since the random forest is basically a CV results with a bunch of randomly generated trees.
+here are the random Forest results AGAIN!
+```{r}
+fsmodel
+```
+
+# Out of Sample Error
+We'd expect the out of sample error to be close if not higher than the cv error since the cv algo divides the data into 10 partitions and predicts 1 of the 10 using the other 9 partitions.
+BUT we can create a test and train partition FROM the entire training data set. If we apply it to the test set from the training set we should get an idea of the out of sample error.
+
+```{r}
+library(caret)
+inTrain <- createDataPartition(y = newtrain2[,55], p = .6, list = FALSE)
+training <- newtrain2[ inTrain,]
+testing <- newtrain2[-inTrain,]
+model2<-J48(factor(training[,55])~.,data=training[,-55])
+oosresults<-predict(model2,newdata=testing[,-55])
+confusionMatrix(oosresults,testing[,55])
+
+```
+Thats Pretty low(~2% or 98% accuracy)....we should be good if we made a prediction on the testset.
+Here is the random Forest results
+
+```{r}
+fsmodeloos<-randomForest(factor(training[,55])~.,data=training[,-55],importance=TRUE,ntree=2000)
+oosresults<-predict(fsmodeloos,newdata=testing[,-55])
+confusionMatrix(oosresults,testing[,55])
+```
+Nice. less than 1%!!! lets use it.
+
+# Deployment and Final Results
+
+Results for the Test Set using the J48
+```{r}
+results<-predict(model1,newdata=test2)
+table(test$problem_id,results)
+
+```
+Results of test set Random Forest
+```{r}
+predRF<-predict(fsmodel,newdata=test2)
+table(test$problem_id,predRF)
+```
+I'm submitting the Random Forest Results. why? I like Random Forests.
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(predRF)
+predRF
+```
+
+what do you know, 100%.
