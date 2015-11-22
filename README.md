@@ -1,6 +1,8 @@
 # MLproject
 ## Machine Learning Coursera project 
-All the files are located on the gh-pages branch
+All the code,files are located on the gh-pages branch.
+
+I submitted links to all three. if you're reading this, change the "master" banch to "gh-pages"
 
 Thanks
 
